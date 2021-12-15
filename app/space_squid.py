@@ -62,7 +62,8 @@ def filter_asset_by_token_id(a):
 
 prices_csv = 'data/town_star_prices.csv'
 prices = pd.read_csv(prices_csv) if os.path.exists(prices_csv) else None
-last_price_refresh = datetime.fromisoformat(prices['LastUpdate'].iloc[0])
+last_price_refresh = datetime.now() - timedelta(seconds=page_refresh_interval*2) \
+    if prices is None else datetime.fromisoformat(prices['LastUpdate'].iloc[0])
 expired = (datetime.now() - last_price_refresh).total_seconds() > page_refresh_interval
 if prices is None or st.button('Update Prices') or expired:
     status_text.write('Updating prices...')
