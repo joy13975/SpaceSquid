@@ -44,7 +44,7 @@ def get_coin_price(*coins):
     assert r.status_code == 200
     return {k: v['usd'] for k, v in r.json().items()}
 
-def fetch_rewards(url='https://docs.google.com/spreadsheets/d/1z_18FrAbA9gMbyGn91j_Uf31lQW0ksUUHpPuGrXNHQY/export?format=csv&id=1z_18FrAbA9gMbyGn91j_Uf31lQW0ksUUHpPuGrXNHQY&gid=0'):
+def fetch_rewards(url=r'https://docs.google.com/spreadsheets/d/1z_18FrAbA9gMbyGn91j_Uf31lQW0ksUUHpPuGrXNHQY/export?format=csv&id=1z_18FrAbA9gMbyGn91j_Uf31lQW0ksUUHpPuGrXNHQY&gid=0'):
     return pd.read_csv(url)
 
 def fetch_items(

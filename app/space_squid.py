@@ -1,17 +1,17 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import base64
 
 import pandas as pd
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(layout='wide')
+# st.set_page_config(layout='wide')
 from util import *
 
-price_refresh_seconds = 30
-refresh_count = st_autorefresh(interval=price_refresh_seconds * 1000)
-page_refresh_time = datetime.now()
+page_refresh_interval = 30  # seconds
+refresh_count = st_autorefresh(interval=page_refresh_interval * 1000)
+page_last_refresh_time = datetime.now()
 
 '''# SpaceSquid
 ---'''
@@ -26,6 +26,7 @@ f'''### Coin prices
 
 '''### Status'''
 status_text = st.empty()
+status_text.write('Idle')
 
 
 rewards = fetch_rewards()
@@ -62,7 +63,7 @@ def filter_asset_by_token_id(a):
 prices_csv = 'data/town_star_prices.csv'
 prices = pd.read_csv(prices_csv) if os.path.exists(prices_csv) else None
 last_price_refresh = datetime.fromisoformat(prices['LastUpdate'].iloc[0])
-expired = (datetime.now() - last_price_refresh).total_seconds() > price_refresh_seconds
+expired = (datetime.now() - last_price_refresh).total_seconds() > page_refresh_interval
 if prices is None or st.button('Update Prices') or expired:
     status_text.write('Updating prices...')
     assets = fetch_items(token_ids=token_ids.token_id)
@@ -80,30 +81,35 @@ prices = prices.sort_values(['ROI'])
 def generate_md_row(row):
     str_vals = []
     for idx, val in zip(row.index, row.values):
+        if idx == 'LastUpdate':
+            continue
         str_vals.append(str({
             'Link': lambda v: f'[OpenSea]({v})',
             'ETH': lambda v: f'{float(v):.4f}',
             'USD': lambda v: f'${v:,.0f}',
             'Qty': lambda v: f'{v:.0f}',
             'Reward': lambda v: f'{v:.0f} (${v * coin_prices["town-star"]:.1f})',
-            'ROI': lambda v: f'{v:.0f}',
+            'ROI': lambda v: f'{v:.1f}',
         }.get(idx, lambda v: v)(val)))
     return ('|' + '|'.join(str_vals) + '|')
 
 
 def generate_md_header(cols):
+    cols = [c for c in cols if c != 'LastUpdate']
     return [
         ('|' + '|'.join(cols) + '|'),
         ('|' + '|'.join('---' for _ in cols) + '|')
     ]
 
+max_eth = st.slider('Max ETH', min_value=0.1, max_value=10.0, value=0.8, step=0.01)
 notif_text = st.empty()
-roi_warn_threshold = st.slider('ROI threshold', step=1, min_value=1, max_value=150, value=115)
-md = '\n'.join(generate_md_header(prices.columns) + prices.apply(generate_md_row, axis=1).values.tolist())
+roi_warn_threshold = st.slider('ROI threshold', step=1, min_value=1, max_value=150, value=110)
+f'### Last Update: {datetime.fromisoformat(prices.LastUpdate.iloc[0]).strftime("%Y-%m-%d %H:%M")}'
+md = '\n'.join(generate_md_header(prices.columns) + prices[prices.ETH <= max_eth].apply(generate_md_row, axis=1).values.tolist())
 st.markdown(md)
 
 def get_countdown():
-    return (datetime.now() - page_refresh_time).total_seconds()
+    return ((page_last_refresh_time + timedelta(seconds=page_refresh_interval)) - datetime.now()).total_seconds()
 
 with open('data/chime.wav', "rb") as f:
     audio_bytes = f.read()
@@ -115,7 +121,7 @@ audio_html = f"""
     </audio>
 """
 audio_widget = st.empty()
-while get_countdown() <= price_refresh_seconds:
+while get_countdown() <= page_refresh_interval:
     if len(prices[prices.ROI < roi_warn_threshold]) > 0:
         notif_text.write(f'Check ROI < {roi_warn_threshold} !!! Refresh in ~{round(get_countdown())}s')
         audio_widget.markdown(audio_html, unsafe_allow_html=True)
