@@ -1,6 +1,5 @@
 import requests
 from urllib.parse import urlencode
-from multiprocessing.pool import ThreadPool
 
 import numpy as np
 import pandas as pd
@@ -24,6 +23,9 @@ def fetch_prices(assets):
     data = []
     for a in assets:
         sell_orders = a['sell_orders']
+        if not sell_orders:
+            print(a['name'] + ' has no sell orders')
+            continue
         cheapest_so_idx = np.argmin([get_order_usd_price(so) for so in sell_orders])
         cheapest_so = sell_orders[cheapest_so_idx]
         cheapest_price_eth = get_order_eth_price(cheapest_so)
@@ -89,7 +91,14 @@ def fetch_items(
             params = base_params
             if ti_param:
                 params += '&' + ti_param
-            r = requests.get(url=f'https://api.opensea.io/api/v1/assets?{params}')
+            status_code = None
+            while status_code != 200:
+                r = requests.get(url=f'https://api.opensea.io/api/v1/assets?{params}')
+                status_code = r.status_code
+                if 'Gateway Time-out' in r.reason:
+                    print(f'Gateway Time-out (params={params}); sleeping 60s...')
+                    sleep(60)
+            
             assert r.status_code == 200, r.reason
             assets = r.json()['assets']
             if len(assets) == 0:

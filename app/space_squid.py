@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta
 import base64
+from numpy.core.fromnumeric import sort
 
 import pandas as pd
 import streamlit as st
@@ -33,11 +34,11 @@ rewards = fetch_rewards()
 reward_item_names = rewards.NFT.str.lower().str.strip().values
 def filter_asset_by_name(a):
     # Filter by item name
-    if 'name' not in a or\
-        not isinstance(a['name'], str) or\
-        a['name'].lower().strip() not in reward_item_names:
-        return False
-    return True
+    if 'name' in a and\
+        isinstance(a['name'], str) and \
+        any(a['name'].lower().strip() in n for n in reward_item_names):
+        return True
+    return False
 
 def update_token_ids():
     assets = list(fetch_items(status_text, attribute_filter=filter_asset_by_name))
@@ -69,13 +70,32 @@ if prices is None or st.button('Update Prices') or expired:
     status_text.write('Updating prices...')
     assets = fetch_items(token_ids=token_ids.token_id)
     prices = fetch_prices(assets)
-    prices['Reward'] = prices.Name.map(lambda n: float(rewards[rewards.NFT == n]['TOWN Value'].iloc[0]))
+
+    def get_reward(name):
+        name_match = rewards.NFT == name
+        if not any(name_match):
+            print(f'No reward info found for {name}')
+            return float('nan')
+        return float(rewards[name_match]['TOWN Value'].iloc[0])
+    
+    prices['Reward'] = prices.Name.map(get_reward)
     prices['ROI'] = prices.USD / (prices.Reward * coin_prices['town-star'])
     prices['LastUpdate'] = datetime.now().isoformat()
     prices.to_csv(prices_csv, index=False)
     status_text.empty()
 
-prices = prices.sort_values(['ROI'])
+col1, col2 = st.columns(2)
+with col1:
+    sort_option = st.selectbox(label='Sort By', options=['ROI', 'Price'])
+with col2:
+    sort_order = st.selectbox(label='Order', options=['ASC', 'DESC'])
+prices = prices.sort_values({
+    'ROI': 'ROI',
+    'Price': 'ETH',
+}[sort_option], ascending={
+    'ASC': True,
+    'DESC': False
+}[sort_order])
 
 # Generate markdown table instead of
 # st.dataframe(prices.style.format(subset=['Reward', 'ROI', 'USD', 'Qty'], formatter="{:.0f}").format(subset=['ETH'], formatter="{:.3f}"))
