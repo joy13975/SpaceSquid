@@ -69,64 +69,80 @@ expired = (datetime.now() - last_price_refresh).total_seconds() > page_refresh_i
 if prices is None or st.button('Update Prices') or expired:
     status_text.write('Updating prices...')
     assets = fetch_items(token_ids=token_ids.token_id)
-    prices = fetch_prices(assets)
+    prices = parse_prices(assets)
 
     def get_reward(name):
-        name_match = rewards.NFT == name
+        name_match = (rewards.NFT == name) | (rewards.NFT.str.lower().str.startswith(name.lower()))
         if not any(name_match):
             print(f'No reward info found for {name}')
             return float('nan')
         return float(rewards[name_match]['TOWN Value'].iloc[0])
     
     prices['Reward'] = prices.Name.map(get_reward)
-    prices['ROI'] = prices.USD / (prices.Reward * coin_prices['town-star'])
+    prices['DTC'] = prices['OS USD'] / (prices.Reward * coin_prices['town-star'])
     prices['LastUpdate'] = datetime.now().isoformat()
     prices.to_csv(prices_csv, index=False)
     status_text.empty()
 
 col1, col2 = st.columns(2)
 with col1:
-    sort_option = st.selectbox(label='Sort By', options=['ROI', 'Price'])
+    sort_option = st.selectbox(label='Sort By', options=['Change', 'DTC', 'Price', 'GS Qty'])
 with col2:
     sort_order = st.selectbox(label='Order', options=['ASC', 'DESC'])
-prices = prices.sort_values({
-    'ROI': 'ROI',
-    'Price': 'ETH',
-}[sort_option], ascending={
-    'ASC': True,
-    'DESC': False
-}[sort_order])
+prices = prices\
+    .sort_values(
+    {
+        'Change': 'OS Change',
+        'DTC': 'DTC',
+        'Price': 'OS USD',
+        'GS Qty': 'GS Qty'
+    }[sort_option], ascending=
+    {
+        'ASC': True,
+        'DESC': False
+    }[sort_order])
 
-# Generate markdown table instead of
-# st.dataframe(prices.style.format(subset=['Reward', 'ROI', 'USD', 'Qty'], formatter="{:.0f}").format(subset=['ETH'], formatter="{:.3f}"))
+# Generate markdown table
+md_exclude_headers =  ['LastUpdate', 'OS Link', 'OS Qty', 'GS Link', 'GS Qty']
 def generate_md_row(row):
     str_vals = []
+    os_qty = f'{max(row["OS Qty"], 0):.0f}'
+    if os_qty in ['0', 'nan']:
+        os_qty = '⚠️'
+    gs_qty = f'{max(row["GS Qty"], 0):.0f}'
+    if gs_qty in ['0', 'nan']:
+        gs_qty = '⚠️'
     for idx, val in zip(row.index, row.values):
-        if idx == 'LastUpdate':
+        if idx in md_exclude_headers:
             continue
         str_vals.append(str({
-            'Link': lambda v: f'[OpenSea]({v})',
-            'ETH': lambda v: f'{float(v):.4f}',
-            'USD': lambda v: f'${v:,.0f}',
-            'Qty': lambda v: f'{v:.0f}',
+            'OS ETH': lambda v: f'{float(v):.4f}',
+            'OS USD': lambda v: f'${v:,.0f}',
+            'GS USD': lambda v: f'${v:,.0f}',
+            'OS Change': lambda v: f'{v:,.1f}%',
             'Reward': lambda v: f'{v:.0f} (${v * coin_prices["town-star"]:.1f})',
-            'ROI': lambda v: f'{v:.1f}',
+            'DTC': lambda v: f'{v:.1f}',
+            'Arb': lambda v: f'${v:,.0f}',
+            'Name': lambda v: f'{v} ([OS:{os_qty}]({row["OS Link"]}), [GS:{gs_qty}]({row["GS Link"]}))'
         }.get(idx, lambda v: v)(val)))
     return ('|' + '|'.join(str_vals) + '|')
 
 
 def generate_md_header(cols):
-    cols = [c for c in cols if c != 'LastUpdate']
+    cols = [c for c in cols if c not in md_exclude_headers]
     return [
         ('|' + '|'.join(cols) + '|'),
         ('|' + '|'.join('---' for _ in cols) + '|')
     ]
 
-max_eth = st.slider('Max ETH', min_value=0.1, max_value=10.0, value=0.8, step=0.01)
+arb_only = st.checkbox('Arb Only', value=False)
+if arb_only:
+    prices = prices[prices['Arb'] > 0]
+max_eth = st.slider('Max ETH', min_value=0.1, max_value=10.0, value=1.0, step=0.01)
 notif_text = st.empty()
-roi_warn_threshold = st.slider('ROI threshold', step=1, min_value=1, max_value=150, value=110)
+roi_warn_threshold = st.slider('DTC threshold', step=1, min_value=1, max_value=150, value=110)
 f'### Last Update: {datetime.fromisoformat(prices.LastUpdate.iloc[0]).strftime("%Y-%m-%d %H:%M")}'
-md = '\n'.join(generate_md_header(prices.columns) + prices[prices.ETH <= max_eth].apply(generate_md_row, axis=1).values.tolist())
+md = '\n'.join(generate_md_header(prices.columns) + prices[prices['OS ETH'] <= max_eth].apply(generate_md_row, axis=1).values.tolist())
 st.markdown(md)
 
 def get_countdown():
@@ -143,8 +159,8 @@ audio_html = f"""
 """
 audio_widget = st.empty()
 while get_countdown() <= page_refresh_interval:
-    if len(prices[prices.ROI < roi_warn_threshold]) > 0:
-        notif_text.write(f'Check ROI < {roi_warn_threshold} !!! Refresh in ~{round(get_countdown())}s')
+    if len(prices[prices.DTC < roi_warn_threshold]) > 0:
+        notif_text.write(f'Check DTC < {roi_warn_threshold} !!! Refresh in ~{round(get_countdown())}s')
         audio_widget.markdown(audio_html, unsafe_allow_html=True)
     else:
         notif_text.write(f'Will refresh in ~{round(get_countdown())}s')
