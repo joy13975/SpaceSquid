@@ -9,7 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 
 from util import *
 
-st.set_page_config(page_title='SpaceSquid')
+st.set_page_config(page_title='SpaceSquid', layout='wide')
 
 page_refresh_interval = 60  # seconds
 refresh_count = st_autorefresh(interval=page_refresh_interval * 1000)
@@ -78,7 +78,8 @@ with st.sidebar:
             'DTC': 'DTC',
             'Arb': 'Arb',
             'Price': 'OS USD',
-            'GS Qty': 'GS Qty'
+            'Last Sale Price': 'OS LastSale USD',
+            'GS Qty': 'GS Qty',
         }
         sort_option = st.selectbox(label='Sort By', options=price_sort_map.keys())
     with cols[1]:
@@ -111,7 +112,7 @@ if prices is None or update_prices_btn or expired:
     if update_prices_btn:
         print('Update price button pressed')
     if expired:
-        print('Prices expired')
+        print(f'Prices expired. Time now: {datetime.now().isoformat()}; last update: {last_price_refresh.isoformat()}')
     update_status('Updating prices...')
     assets = list(fetch_items(token_ids=token_ids.token_id))
     prices = parse_prices(assets)
@@ -159,6 +160,7 @@ def generate_md_row(row):
         str_vals.append(str({
             'OS ETH': lambda v: f'{float(v):.4f}',
             'OS USD': lambda v: f'${v:,.0f}',
+            'OS LastSale USD': lambda v: f'${v:,.0f}',
             'GS USD': lambda v: f'${v:,.0f}',
             'OS Change': lambda v: f'{v:,.1f}%',
             'Reward': lambda v: f'{v:.0f} (${v * coin_prices["town-star"]:.1f})',

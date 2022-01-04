@@ -54,8 +54,14 @@ def fetch_rewards():
     }
     data = ('method=getTempTableInfo&curJson=%7B%22BasedOn%22%3A%22Items%22%2C%22DashBoardItemName%22%3A%22NFT+Rewards+for+Townstar+(Vox+%26+Townstar+NFT)%22%2C%22DashBoardItemDescription%22%3A%22This+dashboard+will+give+you+all+NFT\'s+that+are+used+in+Townstar%2C+ordered+by+their+rarity.+It+includes+as+well+the+current+price+on+the+market%22%2C%22DashboardID%22%3A%22-1%22%2C%22IsItemActivated%22%3A%221%22%2C%22Collections%22%3A%5B%22collectvox%22%2C%22town-star%22%5D%2C%22CollectionItems%22%3A%5B%5D%2C%22SelectFields%22%3A%5B%22itemname%22%2C%22colname%22%2C%22itemrarityscore%22%2C%22reppricelowETH%22%5D%2C%22Statements%22%3A%5B%5D%2C%22Footer%22%3A%5B%5D%2C%22FinalStatements%22%3A%5B%22itemname%22%2C%22colname%22%2C%22itemrarityscore%22%2C%22reppricelowETH%22%5D%2C%22OrderBy%22%3A%5B%22itemrarityscoreDesc%22%5D%2C%22LimitQuery%22%3A%5B%7B%22AndOr%22%3A%22And%22%2C%22FieldName%22%3A%22itemrarityscore%22%2C%22Type%22%3A%22Number%22%2C%22Operator%22%3A%22%3E%22%2C%22Value%22%3A%220%22%7D%5D%2C%22isGraph%22%3A%220%22%2C%22GraphType%22%3A%22%22%2C%22GraphTitle%22%3A%22%22%2C%22GraphLabel%22%3A%22%22%2C%22GraphValues%22%3A%22%22%2C%22isShowDetailsButton%22%3A%221%22%2C%22Alert%22%3A%5B%5D%7D&'
         f'curToken={nftlookup_io["curToken"]}')
-    r = requests.post(url='https://nftlookup.io/nftlookup/GeneralComponents/DatabaseFunctions.cfc',
-        headers=h, data=data)
+    
+    while True:
+        r = requests.post(url='https://nftlookup.io/nftlookup/GeneralComponents/DatabaseFunctions.cfc',
+            headers=h, data=data)
+        if r.status_code == 200:
+            break
+        print(f'Failed to fetch rewards: {r.reason}, waiting...')
+        sleep(60)
     r_data = r.json()
     rewards_df = pd.DataFrame(r_data['TableData'], columns=[v['title'] for v in r_data['TableColumns']])\
         .rename(columns={
@@ -241,7 +247,7 @@ def parse_prices(assets, n_workers=16):
             os_qty = int(cheapest_so['quantity'])
             last_sale = a['last_sale']
             # last_sale_eth = parse_last_sale_price(last_sale, symbol='eth')
-            os_last_sale_usd = parse_last_sale_price(last_sale, symbol='usd')
+            os_last_sale_usd = parse_last_sale_price(last_sale, symbol='usd') if last_sale else nan
             # last_sale_qty = float(last_sale['quantity'])
             gs_link, gs_usd, gs_qty = fetch_gala_store_price(cheapest_so, name=a['name'])
         else:
@@ -251,19 +257,20 @@ def parse_prices(assets, n_workers=16):
             a['permalink'],
             os_price_eth,
             os_price_usd,
+            os_last_sale_usd,
             max(os_qty, 0),
             100 * (os_price_usd - os_last_sale_usd) / os_last_sale_usd,
             gs_link,
             gs_usd,
             max(gs_qty, 0),
-            os_price_usd * (1 - opensea_commission - opensea_townstar_commission) -
+            min(os_last_sale_usd, os_price_usd) * (1 - opensea_commission - opensea_townstar_commission) -
                 (gs_usd + gs_fee + gs_mint_fee)
         ]
     with ThreadPool(n_workers) as pool:
         data = [i for i in pool.map(thread_work, assets) if i is not None]
     return pd.DataFrame(data, columns=[
         'Name', 'OS Link',
-        'OS ETH', 'OS USD', 'OS Qty', 'OS Change',
+        'OS ETH', 'OS USD', 'OS LastSale USD', 'OS Qty', 'OS Change',
         'GS Link', 'GS USD', 'GS Qty', 'Arb'])
 
 
