@@ -1,0 +1,2 @@
+for bad_pid in $(ps aux | grep "[s]treamlit run app/space_squid.py" | awk '{print $2}'); do kill -9 $bad_pid; done
+for bad_pid in $(ps aux | grep "[p]ython app/background_updater.py" | awk '{print $2}'); do kill -9 $bad_pid; done

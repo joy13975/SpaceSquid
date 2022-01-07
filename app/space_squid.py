@@ -1,31 +1,25 @@
 import os
 from datetime import datetime, timedelta
 import base64
-from numpy.core.fromnumeric import sort
+import subprocess
 
 import pandas as pd
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from util import *
+from background_updater import jobs_file
 
 st.set_page_config(page_title='SpaceSquid', layout='wide')
 
-page_refresh_interval = 60  # seconds
+page_refresh_interval = 30  # seconds
 refresh_count = st_autorefresh(interval=page_refresh_interval * 1000)
 page_last_refresh_time = datetime.now()
 
-rewards = fetch_rewards()
-reward_item_names = lowertrim(rewards.name).values
-def filter_asset_by_name(a):
-    # Filter by item name
-    if 'name' in a and\
-        isinstance(a['name'], str) and \
-        any(lowertrim(a['name']) in n for n in reward_item_names):
-        return True
-    return False
-
-coin_prices = fetch_coin_prices('ethereum', 'gala', 'town-star')
+base_data_dir = 'data/town-star'
+nft_prices_csv = os.path.join(base_data_dir, 'nft_prices.csv')
+nft_rewards_csv = os.path.join(base_data_dir, 'nft_rewards.csv')
+coin_prices_csv = os.path.join(base_data_dir, 'coin_prices.csv')
 
 st.markdown(
     f'''
@@ -49,16 +43,32 @@ st.markdown(
 
 with st.sidebar:
     status_text = st.empty()
-    item_count_text = st.empty()
     def update_status(s):
         status_text.write('## Status: ' + s)
+
+def load_data(file, bg_args=[], load_func=pd.read_csv, force_update=False, patient=False):
+    if force_update or not os.path.isfile(file):
+        subprocess.Popen(['python', 'app/background_updater.py', *bg_args], start_new_session=True)
+        bg_jobs = read_json(jobs_file)
+        update_status(f'Running background jobs: {",".join(bg_jobs)}')
+    return load_file(file, load_func, patient=patient)
+
+rewards_expired = has_expired(nft_rewards_csv, 3600)
+rewards = load_data(nft_rewards_csv, bg_args=['update_nft_rewards', nft_rewards_csv], force_update=rewards_expired, patient=True)
+
+coin_prices_expired = True
+coin_prices = load_data(coin_prices_csv, bg_args=['update_coin_prices', coin_prices_csv, 'ethereum', 'gala', 'town-star'], force_update=coin_prices_expired, patient=True)
+coin_prices = coin_prices.set_index('coin')
+
+with st.sidebar:
+    item_count_text = st.empty()
 
     for line in [
         '## Coin prices \n',
         f'''
         | ETH | GALA | TOWN |
         | --- | --- | --- |
-        | ${coin_prices["ethereum"]:.1f} | ${coin_prices["gala"]:.3f} | ${coin_prices["town-star"]:.3f} |
+        | ${coin_prices.loc["ethereum"].usd:.1f} | ${coin_prices.loc["gala"].usd:.3f} | ${coin_prices.loc["town-star"].usd:.3f} |
         '''
         ]:
         st.markdown(line)
@@ -85,38 +95,10 @@ with st.sidebar:
     with cols[1]:
         sort_order = st.selectbox(label='Order', options=['ASC', 'DESC'])
 
+nft_prices_expired = update_token_id_btn or has_expired(nft_prices_csv, 60)
+prices = load_data(nft_prices_csv, bg_args=['update_nft_prices', nft_prices_csv, nft_rewards_csv, coin_prices_csv, '1' if update_token_id_btn else ''], force_update=nft_prices_expired)
 
-def update_token_ids():
-    assets = list(fetch_items(update_status, attribute_filter=filter_asset_by_name))
-    return [a['token_id'] for a in assets], assets
-
-
-token_id_csv = 'data/town_star_token_ids.csv'
-token_ids = pd.read_csv(token_id_csv) if os.path.exists(token_id_csv) else None
-assets = None
-if token_ids is None or update_token_id_btn:
-    token_ids, assets = update_token_ids()
-    token_ids = pd.DataFrame(token_ids, columns=['token_id'])
-    token_ids.to_csv(token_id_csv, index=False)
-    update_status(f'Token ID list updated (n={len(token_ids)}); assets fetched')
-
-def filter_asset_by_token_id(a):
-    return 'token_id' in a and a['token_id'] in token_ids
-
-prices_csv = 'data/town_star_prices.csv'
-prices = pd.read_csv(prices_csv) if os.path.exists(prices_csv) else None
-last_price_refresh = datetime.now() - timedelta(seconds=page_refresh_interval*2) \
-    if prices is None else datetime.fromisoformat(prices['LastUpdate'].iloc[0])
-expired = (datetime.now() - last_price_refresh).total_seconds() > page_refresh_interval
-if prices is None or update_prices_btn or expired:
-    if update_prices_btn:
-        print('Update price button pressed')
-    if expired:
-        print(f'Prices expired. Time now: {datetime.now().isoformat()}; last update: {last_price_refresh.isoformat()}')
-    update_status('Updating prices...')
-    assets = list(fetch_items(token_ids=token_ids.token_id))
-    prices = parse_prices(assets)
-
+if prices is not None:
     def get_reward(name):
         name_match = (rewards.name == name)
         if not any(name_match):
@@ -130,14 +112,11 @@ if prices is None or update_prices_btn or expired:
         if n > 1:
             print(f'Warning: {name} has {n} reward matches: {r}')
         return float(r.reward.iloc[0])
-    
-    prices['Reward'] = prices.Name.map(get_reward)
-    prices['DTC'] = prices['OS USD'] / (prices.Reward * coin_prices['town-star'])
-    prices['LastUpdate'] = datetime.now().isoformat()
-    prices.to_csv(prices_csv, index=False)
-    update_status('Done')
 
-item_count_text.write(f'Total: {len(prices)} items')
+    prices['Reward'] = prices.Name.map(get_reward)
+    prices['DTC'] = prices['OS USD'] / (prices.Reward * coin_prices.loc['town-star'].usd)
+
+    item_count_text.write(f'Total: {len(prices)} items')
 
 with st.sidebar:    
     arb_only = st.checkbox('Arb Only', value=False)
@@ -163,7 +142,7 @@ def generate_md_row(row):
             'OS LastSale USD': lambda v: f'${v:,.0f}',
             'GS USD': lambda v: f'${v:,.0f}',
             'OS Change': lambda v: f'{v:,.1f}%',
-            'Reward': lambda v: f'{v:.0f} (${v * coin_prices["town-star"]:.1f})',
+            'Reward': lambda v: f'{v:.0f} (${v * coin_prices.loc["town-star"].usd:.1f})',
             'DTC': lambda v: f'{v:.1f}',
             'Arb': lambda v: f'${v:,.0f}',
             'Name': lambda v: f'{v}<br/>([OS:{os_qty}]({row["OS Link"]}), [GS:{gs_qty}]({row["GS Link"]}))'
@@ -180,26 +159,30 @@ def generate_md_header(cols):
 
 search_text = st.text_input(label='Search Item: ', value='')
 
-# Filter and sort prices
-last_update_time = prices.LastUpdate.iloc[0]
-if arb_only:
-    prices = prices[prices['Arb'] > 0]
+last_price_update_time = 'Never'
+table_md = ''
+if prices is not None:
+    # Filter and sort prices
+    last_price_update_time = datetime.fromisoformat(prices.LastUpdate.iloc[0]).strftime("%Y-%m-%d %H:%M")
+    if arb_only:
+        prices = prices[prices['Arb'] > 0]
 
-prices = prices[prices['OS ETH'] <= max_eth]\
-    .sort_values(price_sort_map.get(sort_option, sort_option),
-    ascending=
-    {
-        'ASC': True,
-        'DESC': False
-    }[sort_order])
+    prices = prices[prices['OS ETH'] <= max_eth]\
+        .sort_values(price_sort_map.get(sort_option, sort_option),
+        ascending=
+        {
+            'ASC': True,
+            'DESC': False
+        }[sort_order])
 
-if search_text:
-    prices = prices[lowertrim(prices['Name']).str.contains(lowertrim(search_text))]
+    if search_text:
+        prices = prices[lowertrim(prices['Name']).str.contains(lowertrim(search_text))]
+        
+    table_md = '\n'.join(generate_md_header(prices.columns) + prices.apply(generate_md_row, axis=1).values.tolist())
 
 notif_text = st.empty()
-f'### Last Update: {datetime.fromisoformat(last_update_time).strftime("%Y-%m-%d %H:%M")}'
-md = '\n'.join(generate_md_header(prices.columns) + prices.apply(generate_md_row, axis=1).values.tolist())
-st.write(md, unsafe_allow_html=True)
+f'### Last Price Update: {last_price_update_time}'
+st.write(table_md, unsafe_allow_html=True)
 
 def get_countdown():
     return ((page_last_refresh_time + timedelta(seconds=page_refresh_interval)) - datetime.now()).total_seconds()
@@ -215,7 +198,7 @@ audio_html = f"""
 """
 audio_widget = st.empty()
 while get_countdown() <= page_refresh_interval:
-    if len(prices[prices.DTC < dtc_warn_threshold]) > 0:
+    if prices is not None and len(prices[prices.DTC < dtc_warn_threshold]) > 0:
         notif_text.write(f'Check DTC < {dtc_warn_threshold} !!! Refresh in ~{round(get_countdown())}s')
         audio_widget.write(audio_html, unsafe_allow_html=True)
     else:
