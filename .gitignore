@@ -1,4 +1,4 @@
-bg_jobs.json
+*.sqlite3
 config.json
 .vscode
 

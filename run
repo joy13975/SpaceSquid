@@ -1,1 +1,4 @@
+#!/bin/bash
+./kill
+python -c "from app.background_state import BackgroundStateDB; bsdb = BackgroundStateDB(); bsdb.destroy_db(); bsdb.init_db()"
 streamlit run app/space_squid.py

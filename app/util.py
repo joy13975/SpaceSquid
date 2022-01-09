@@ -19,7 +19,6 @@ nan = float('nan')
 opensea_commission = 0.025
 opensea_townstar_commission = 0.025
 
-
 def has_expired(file, threshold_sec, load_func=pd.read_csv):
     df = load_file(file, load_func=load_func)
     if df is None:

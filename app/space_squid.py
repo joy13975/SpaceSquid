@@ -8,7 +8,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from util import *
-from background_updater import jobs_file
+from background_state import BackgroundStateDB
 
 st.set_page_config(page_title='SpaceSquid', layout='wide')
 
@@ -49,7 +49,8 @@ with st.sidebar:
 def load_data(file, bg_args=[], load_func=pd.read_csv, force_update=False, patient=False):
     if force_update or not os.path.isfile(file):
         subprocess.Popen(['python', 'app/background_updater.py', *bg_args], start_new_session=True)
-        bg_jobs = read_json(jobs_file)
+        bsdb = BackgroundStateDB()
+        bg_jobs = bsdb.list_processes()
         update_status(f'Running background jobs: {",".join(bg_jobs)}')
     return load_file(file, load_func, patient=patient)
 
@@ -124,7 +125,7 @@ with st.sidebar:
     dtc_warn_threshold = st.slider('DTC Alert Threshold', step=1, min_value=1, max_value=200, value=130)
 
 # Generate markdown table
-md_exclude_headers =  ['LastUpdate', 'OS Link', 'OS Qty', 'GS Link', 'GS Qty']
+md_exclude_headers =  ['token_id', 'LastUpdate', 'OS Link', 'OS Qty', 'GS Link', 'GS Qty']
 def generate_md_row(row):
     str_vals = []
     os_qty = f'{max(row["OS Qty"], 0):.0f}'

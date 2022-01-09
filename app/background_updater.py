@@ -1,12 +1,9 @@
 import sys
 import requests
 from datetime import datetime
-from random import random
-from time import sleep
 
 from util import *
-
-jobs_file = 'bg_jobs.json'
+from background_state import *
 
 
 def update_coin_prices(coin_prices_csv, *coins):
@@ -68,15 +65,8 @@ def update_nft_prices(nft_prices_csv, nft_rewards_csv, coin_prices_csv, force_up
 if __name__ == '__main__':
     assert len(sys.argv) > 1, 'Provide function name'
     func_name = sys.argv[1]
-    sleep(random() * 2)
-    jobs = read_json(jobs_file)
-    if func_name in jobs:
-        print(f'Skipping {func_name} because it is ongoing')
-        exit(0)
-    jobs.append(func_name)
-    jobs = sorted(set(jobs))
-    write_json(jobs_file, jobs)
-    print(f'Starting function {func_name}')
-    locals()[func_name](*sys.argv[2:])
-    jobs.remove(func_name)
-    write_json(jobs_file, jobs)
+    try:
+        with BackgroundState(func_name):
+            locals()[func_name](*sys.argv[2:])
+    except ProcessRegistryError as e:
+        print(f'Process error: {func_name}; ({e})')
