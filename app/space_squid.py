@@ -50,7 +50,7 @@ def load_data(file, bg_args=[], load_func=pd.read_csv, force_update=False, patie
     if force_update or not os.path.isfile(file):
         subprocess.Popen(['python', 'app/background_updater.py', *bg_args], start_new_session=True)
         bsdb = BackgroundStateDB()
-        bg_jobs = bsdb.list_processes()
+        bg_jobs = [row[0] for row in bsdb.list_processes()]
         update_status(f'Running background jobs: {",".join(bg_jobs)}')
     return load_file(file, load_func, patient=patient)
 
