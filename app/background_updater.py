@@ -65,8 +65,8 @@ def update_nft_prices(nft_prices_csv, nft_rewards_csv, coin_prices_csv, force_up
 if __name__ == '__main__':
     assert len(sys.argv) > 1, 'Provide function name'
     func_name = sys.argv[1]
-    try:
-        with BackgroundState(func_name):
+    with BackgroundState(func_name):
+        try:
             locals()[func_name](*sys.argv[2:])
-    except ProcessRegistryError as e:
-        print(f'Process error: {func_name}; ({e})')
+        except ProcessRegistryError as e:
+            print(f'Process error: {func_name}; ({e})')

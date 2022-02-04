@@ -1,3 +1,4 @@
+from wsgiref import headers
 import requests
 import os
 import json
@@ -82,13 +83,21 @@ def fetch_opensea_assets(
             params = base_params
             if ti_param:
                 params += '&' + ti_param
-            status_code = None
-            while status_code != 200:
-                r = requests.get(url=f'https://api.opensea.io/api/v1/assets?{params}')
+            while True:
+                url = f'https://api.opensea.io/api/v1/assets?{params}'
+                print(f'Fetching url: {url}')
+                r = requests.get(url, headers={
+                    'X-API-KEY': config['opensesa_api_key']
+                })
                 status_code = r.status_code
+                if str(status_code) == '200':
+                    break
                 if 'Gateway Time-out' in r.reason:
                     print(f'Gateway Time-out (params={params}); sleeping 60s...')
                     sleep(60)
+                else:
+                    print(f'Failed to fetch assets. Code={status_code}, reason={r.reason}')
+                    sleep(10)
 
             assert r.status_code == 200, r.reason
             assets = r.json()['assets']
