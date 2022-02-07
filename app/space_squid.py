@@ -1,4 +1,3 @@
-import signal
 import os
 from datetime import datetime, timedelta
 import base64
@@ -7,27 +6,11 @@ import subprocess
 import pandas as pd
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
-import psutil
 
 from util import *
 from background_state import BackgroundStateDB
 
 st.set_page_config(page_title='SpaceSquid', layout='wide')
-
-original_sigint = signal.getsignal(signal.SIGINT)
-def exit_gracefully(signum, frame):
-    signal.signal(signal.SIGINT, original_sigint)
-    # kill all background processes
-    # for proc in psutil.process_iter():
-    #     if proc.name() == PROCNAME:
-    # clear process table
-    with BackgroundStateDB():
-        bs = BackgroundStateDB()
-        bs.cursor.execute(f'DELETE FROM {BackgroundStateDB.table_name}')
-    signal.signal(signal.SIGINT, exit_gracefully)
-
-
-signal.signal(signal.SIGINT, exit_gracefully)
 
 page_refresh_interval = 30  # seconds
 refresh_count = st_autorefresh(interval=page_refresh_interval * 1000)

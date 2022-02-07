@@ -24,9 +24,11 @@ def BackgroundState(process_name):
         c.execute(
             f'INSERT INTO {bs.table_name} (process_name, start_time) VALUES ("{process_name}", "{time_now_str}")')
         bs.connection.commit()
-        yield bs
-        c.execute(f'DELETE FROM {bs.table_name} WHERE process_name = "{process_name}"')
-        bs.connection.commit()
+        try:
+            yield bs
+        finally:
+            c.execute(f'DELETE FROM {bs.table_name} WHERE process_name = "{process_name}"')
+            bs.connection.commit()
     print(f'Background state: {process_name} exited DB')
 
 
